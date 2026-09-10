@@ -13,6 +13,9 @@ const (
 	// Codex represents the OpenAI Codex provider identifier.
 	Codex = "codex"
 
+	// Cursor represents the native Cursor AgentService provider identifier.
+	Cursor = "cursor"
+
 	// Claude represents the Anthropic Claude provider identifier.
 	Claude = "claude"
 

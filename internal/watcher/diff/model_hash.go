@@ -28,6 +28,11 @@ func ComputeClaudeModelsHash(models []config.ClaudeModel) string {
 	return modelconfig.ComputeClaudeModelsHash(models)
 }
 
+// ComputeCursorModelsHash returns a stable hash for Cursor model aliases.
+func ComputeCursorModelsHash(models []config.CursorModel) string {
+	return modelconfig.ComputeCursorModelsHash(models)
+}
+
 // ComputeCodexModelsHash returns a stable hash for Codex model aliases.
 func ComputeCodexModelsHash(models []config.CodexModel) string {
 	return modelconfig.ComputeCodexModelsHash(models)

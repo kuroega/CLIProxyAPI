@@ -74,6 +74,7 @@ func main() {
 
 	// Command-line flags to control the application's behavior.
 	var codexLogin bool
+	var cursorLogin bool
 	var codexDeviceLogin bool
 	var claudeLogin bool
 	var noBrowser bool
@@ -93,6 +94,7 @@ func main() {
 
 	// Define command-line flags for different operation modes.
 	flag.BoolVar(&codexLogin, "codex-login", false, "Login to Codex using OAuth")
+	flag.BoolVar(&cursorLogin, "cursor-login", false, "Login to Cursor using OAuth")
 	flag.BoolVar(&codexDeviceLogin, "codex-device-login", false, "Login to Codex using device code flow")
 	flag.BoolVar(&claudeLogin, "claude-login", false, "Login to Claude using OAuth")
 	flag.BoolVar(&noBrowser, "no-browser", false, "Don't open browser automatically for OAuth")
@@ -588,7 +590,7 @@ func main() {
 		CallbackPort: oauthCallbackPort,
 	}
 
-	commandMode := vertexImport != "" || antigravityLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || xaiLogin
+	commandMode := vertexImport != "" || antigravityLogin || codexLogin || cursorLogin || codexDeviceLogin || claudeLogin || kimiLogin || xaiLogin
 	cloudConfigMissing := isCloudDeploy && !configFileExists
 	homeMode := configLoadedFromHome || (cfg != nil && cfg.Home.Enabled)
 	exampleAPIKeySafeMode := shouldEnableExampleAPIKeySafeMode(cfg, commandMode, tuiMode, standalone, cloudConfigMissing, homeMode)
@@ -652,6 +654,9 @@ func main() {
 	} else if codexLogin {
 		// Handle Codex login
 		cmd.DoCodexLogin(cfg, options)
+	} else if cursorLogin {
+		// Handle Cursor login
+		cmd.DoCursorLogin(cfg, options)
 	} else if codexDeviceLogin {
 		// Handle Codex device-code login
 		cmd.DoCodexDeviceLogin(cfg, options)

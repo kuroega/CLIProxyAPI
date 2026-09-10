@@ -20,6 +20,7 @@ func newDefaultAuthManager() *sdkAuth.Manager {
 	return sdkAuth.NewManager(
 		sdkAuth.GetTokenStore(),
 		sdkAuth.NewCodexAuthenticator(),
+		sdkAuth.NewCursorAuthenticator(),
 		sdkAuth.NewClaudeAuthenticator(),
 		sdkAuth.NewXAIAuthenticator(),
 	)

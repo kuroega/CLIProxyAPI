@@ -56,6 +56,21 @@ func ComputeClaudeModelsHash(models []config.ClaudeModel) string {
 	return hashJoined(keys)
 }
 
+// ComputeCursorModelsHash returns a stable hash for Cursor model aliases.
+func ComputeCursorModelsHash(models []config.CursorModel) string {
+	keys := modelRoutingKeys(func(out func(key string)) {
+		for _, model := range models {
+			name := strings.TrimSpace(model.Name)
+			alias := strings.TrimSpace(model.Alias)
+			if name == "" && alias == "" {
+				continue
+			}
+			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("max-context-length=%d", model.MaxContextLength) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + thinkingHashSuffix(model.Thinking))
+		}
+	})
+	return hashJoined(keys)
+}
+
 // ComputeCodexModelsHash returns a stable hash for Codex model aliases.
 func ComputeCodexModelsHash(models []config.CodexModel) string {
 	keys := modelRoutingKeys(func(out func(key string)) {

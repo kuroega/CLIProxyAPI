@@ -135,6 +135,10 @@ func extractRequestScopedErrorRules(auth *Auth, cfg *internalconfig.Config) []in
 		if index >= 0 && index < len(cfg.ClaudeKey) {
 			return cfg.ClaudeKey[index].RequestScopedErrors
 		}
+	case "cursor":
+		if index >= 0 && index < len(cfg.CursorKey) {
+			return cfg.CursorKey[index].RequestScopedErrors
+		}
 	case "codex":
 		if index >= 0 && index < len(cfg.CodexKey) {
 			return cfg.CodexKey[index].RequestScopedErrors

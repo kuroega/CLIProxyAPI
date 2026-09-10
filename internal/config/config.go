@@ -117,6 +117,15 @@ type Config struct {
 	// Codex defines a list of Codex API key configurations as specified in the YAML configuration file.
 	CodexKey []CodexKey `yaml:"codex-api-key" json:"codex-api-key"`
 
+	// CursorKey defines native Cursor AgentService API key configurations.
+	CursorKey []CursorKey `yaml:"cursor-api-key" json:"cursor-api-key"`
+
+	// CursorTools controls explicit opt-in to local Cursor tool execution.
+	CursorTools CursorToolsConfig `yaml:"cursor-tools" json:"cursor-tools"`
+
+	// CursorMCP defines configured local stdio MCP servers for Cursor AgentService tools.
+	CursorMCP CursorMCPConfig `yaml:"cursor-mcp" json:"cursor-mcp"`
+
 	// XAIKey defines xAI API key configurations using the same structure as Codex API keys.
 	XAIKey []XAIKey `yaml:"xai-api-key" json:"xai-api-key"`
 

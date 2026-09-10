@@ -287,6 +287,10 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	}
 
 	// Codex keys (do not print key material)
+	if !reflect.DeepEqual(oldCfg.CursorKey, newCfg.CursorKey) {
+		changes = append(changes, fmt.Sprintf("cursor-api-key count: %d -> %d", len(oldCfg.CursorKey), len(newCfg.CursorKey)))
+	}
+
 	if len(oldCfg.CodexKey) != len(newCfg.CodexKey) {
 		changes = append(changes, fmt.Sprintf("codex-api-key count: %d -> %d", len(oldCfg.CodexKey), len(newCfg.CodexKey)))
 	} else {

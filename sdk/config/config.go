@@ -22,6 +22,11 @@ type PayloadModelRule = internalconfig.PayloadModelRule
 
 type GeminiKey = internalconfig.GeminiKey
 type CodexKey = internalconfig.CodexKey
+type CursorKey = internalconfig.CursorKey
+type CursorModel = internalconfig.CursorModel
+type CursorToolsConfig = internalconfig.CursorToolsConfig
+type CursorMCPConfig = internalconfig.CursorMCPConfig
+type CursorMCPServer = internalconfig.CursorMCPServer
 type XAIKey = internalconfig.XAIKey
 type XAIModel = internalconfig.XAIModel
 type ClaudeKey = internalconfig.ClaudeKey

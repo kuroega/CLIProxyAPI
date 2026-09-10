@@ -159,6 +159,11 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	// Sanitize Codex keys: drop entries without base-url
 	cfg.SanitizeCodexKeys()
 
+	// Sanitize Cursor keys: drop entries without API key or base-url.
+	cfg.SanitizeCursorKeys()
+	cfg.SanitizeCursorTools()
+	cfg.SanitizeCursorMCP()
+
 	// Sanitize xAI keys: drop entries without base-url
 	cfg.SanitizeXAIKeys()
 

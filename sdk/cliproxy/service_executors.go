@@ -201,6 +201,7 @@ func (s *Service) registerAvailableExecutors(ctx context.Context, opts executorR
 func baselineExecutorAuths() []*coreauth.Auth {
 	providers := []string{
 		"codex",
+		constant.Cursor,
 		"claude",
 		constant.Gemini,
 		constant.GeminiInteractions,
@@ -281,6 +282,15 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 		s.coreManager.RegisterExecutor(executor.NewGeminiInteractionsExecutor(cfg))
 	case "vertex":
 		s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(cfg))
+	case constant.Cursor:
+		if !forceReplace {
+			if existingExecutor, hasExecutor := s.coreManager.Executor(constant.Cursor); hasExecutor {
+				if existingCursor, okCursor := existingExecutor.(*executor.CursorExecutor); okCursor && existingCursor.UsesConfig(cfg) {
+					return
+				}
+			}
+		}
+		s.coreManager.RegisterExecutor(executor.NewCursorExecutor(cfg))
 	case "aistudio":
 		if s.wsGateway != nil {
 			s.coreManager.RegisterExecutor(executor.NewAIStudioExecutor(cfg, a.ID, s.wsGateway))

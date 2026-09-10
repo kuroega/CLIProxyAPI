@@ -550,6 +550,73 @@ func (m CodexModel) GetIsCompat() bool        { return m.IsCompat }
 
 func (m CodexModel) GetThinking() *registry.ThinkingSupport { return m.Thinking }
 
+// CursorToolsConfig grants capabilities independently; its zero value denies all local tools.
+// Workspace must be an existing absolute directory. Shell and MCP require OS isolation for untrusted workloads.
+type CursorToolsConfig struct {
+	Workspace string `yaml:"workspace" json:"workspace"`
+	Files     bool   `yaml:"files" json:"files"`
+	Shell     bool   `yaml:"shell" json:"shell"`
+	MCP       bool   `yaml:"mcp" json:"mcp"`
+}
+
+// CursorMCPConfig holds explicitly configured local stdio MCP servers.
+type CursorMCPConfig struct {
+	Servers map[string]CursorMCPServer `yaml:"servers,omitempty" json:"servers,omitempty"`
+}
+
+// CursorMCPServer defines one trusted local stdio MCP executable.
+type CursorMCPServer struct {
+	Enabled      bool     `yaml:"enabled" json:"enabled"`
+	Executable   string   `yaml:"executable" json:"executable"`
+	Args         []string `yaml:"args,omitempty" json:"args,omitempty"`
+	WorkingDir   string   `yaml:"working-dir,omitempty" json:"working-dir,omitempty"`
+	EnvAllowlist []string `yaml:"env-allowlist,omitempty" json:"env-allowlist,omitempty"`
+}
+
+// CursorKey represents the configuration for one native Cursor AgentService credential.
+// Cursor does not support Codex websocket or alpha-search options.
+type CursorKey struct {
+	APIKey              string                   `yaml:"api-key" json:"api-key"`
+	Priority            int                      `yaml:"priority,omitempty" json:"priority,omitempty"`
+	Weight              *int                     `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Prefix              string                   `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	BaseURL             string                   `yaml:"base-url" json:"base-url"`
+	ProxyURL            string                   `yaml:"proxy-url" json:"proxy-url"`
+	Models              []CursorModel            `yaml:"models" json:"models"`
+	Headers             map[string]string        `yaml:"headers,omitempty" json:"headers,omitempty"`
+	ExcludedModels      []string                 `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
+	DisableCooling      *bool                    `yaml:"disable-cooling,omitempty" json:"disable-cooling,omitempty"`
+	RequestRetry        *int                     `yaml:"request-retry,omitempty" json:"request-retry,omitempty"`
+	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
+}
+
+func (k CursorKey) GetAPIKey() string  { return k.APIKey }
+func (k CursorKey) GetBaseURL() string { return k.BaseURL }
+func (k CursorKey) GetPrefix() string  { return k.Prefix }
+func (k CursorKey) GetProxyURL() string {
+	return k.ProxyURL
+}
+
+// CursorModel maps a client-visible Cursor model alias to its exact entitlement ID.
+type CursorModel struct {
+	Name             string                    `yaml:"name" json:"name"`
+	Alias            string                    `yaml:"alias" json:"alias"`
+	DisplayName      string                    `yaml:"display-name,omitempty" json:"display-name,omitempty"`
+	MaxContextLength int                       `yaml:"max-context-length,omitempty" json:"max-context-length,omitempty"`
+	ForceMapping     bool                      `yaml:"force-mapping,omitempty" json:"force-mapping,omitempty"`
+	Thinking         *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+}
+
+func (m CursorModel) GetName() string          { return m.Name }
+func (m CursorModel) GetAlias() string         { return m.Alias }
+func (m CursorModel) GetDisplayName() string   { return m.DisplayName }
+func (m CursorModel) GetMaxContextLength() int { return m.MaxContextLength }
+func (m CursorModel) GetForceMapping() bool    { return m.ForceMapping }
+func (m CursorModel) GetIsCompat() bool        { return false }
+func (m CursorModel) GetThinking() *registry.ThinkingSupport {
+	return m.Thinking
+}
+
 // XAIKey uses the Codex API key structure for native xAI execution.
 type XAIKey = CodexKey
 

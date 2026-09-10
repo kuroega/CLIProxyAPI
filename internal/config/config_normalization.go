@@ -182,6 +182,69 @@ func (cfg *Config) SanitizeCodexKeys() {
 	cfg.CodexKey = sanitizeCodexKeyEntries(cfg.CodexKey)
 }
 
+func trimNonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+// SanitizeCursorTools trims the explicitly configured Cursor workspace.
+func (cfg *Config) SanitizeCursorTools() {
+	if cfg == nil {
+		return
+	}
+	cfg.CursorTools.Workspace = strings.TrimSpace(cfg.CursorTools.Workspace)
+}
+
+// SanitizeCursorMCP normalizes configured Cursor local MCP server fields.
+func (cfg *Config) SanitizeCursorMCP() {
+	if cfg == nil || len(cfg.CursorMCP.Servers) == 0 {
+		return
+	}
+	servers := make(map[string]CursorMCPServer, len(cfg.CursorMCP.Servers))
+	for id, server := range cfg.CursorMCP.Servers {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		server.Executable = strings.TrimSpace(server.Executable)
+		server.WorkingDir = strings.TrimSpace(server.WorkingDir)
+		server.Args = trimNonEmptyStrings(server.Args)
+		server.EnvAllowlist = trimNonEmptyStrings(server.EnvAllowlist)
+		servers[id] = server
+	}
+	cfg.CursorMCP.Servers = servers
+}
+
+// SanitizeCursorKeys removes Cursor API key entries missing a BaseURL.
+func (cfg *Config) SanitizeCursorKeys() {
+	if cfg == nil {
+		return
+	}
+	if len(cfg.CursorKey) == 0 {
+		return
+	}
+	out := make([]CursorKey, 0, len(cfg.CursorKey))
+	for i := range cfg.CursorKey {
+		entry := cfg.CursorKey[i]
+		entry.APIKey = strings.TrimSpace(entry.APIKey)
+		entry.BaseURL = strings.TrimSpace(entry.BaseURL)
+		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
+		entry.Prefix = normalizeModelPrefix(entry.Prefix)
+		entry.Headers = NormalizeHeaders(entry.Headers)
+		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
+		if entry.APIKey == "" || entry.BaseURL == "" {
+			continue
+		}
+		out = append(out, entry)
+	}
+	cfg.CursorKey = out
+}
+
 // SanitizeXAIKeys removes xAI API key entries missing a BaseURL.
 // It applies the same normalization rules as codex-api-key.
 func (cfg *Config) SanitizeXAIKeys() {

@@ -9,6 +9,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/modelconfig"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 )
@@ -112,6 +113,16 @@ func (s *Service) registerModelsForAuthWithCache(ctx context.Context, a *coreaut
 			if authKind == "apikey" {
 				excluded = entry.ExcludedModels
 			}
+		}
+		models = applyExcludedModels(models, excluded)
+	case constant.Cursor:
+		if entry := s.resolveConfigCursorKey(a); entry != nil {
+			models = buildCursorConfigModels(entry)
+			if authKind == "apikey" {
+				excluded = entry.ExcludedModels
+			}
+		} else if authKind != "apikey" {
+			models = s.fetchCursorModels(ctx, a)
 		}
 		models = applyExcludedModels(models, excluded)
 	case "codex":
@@ -480,6 +491,27 @@ func (s *Service) resolveConfigVertexCompatKey(auth *coreauth.Auth) *config.Vert
 	return nil
 }
 
+func (s *Service) resolveConfigCursorKey(auth *coreauth.Auth) *config.CursorKey {
+	if s == nil || s.cfg == nil || auth == nil {
+		return nil
+	}
+	if entry := configEntryForAuthIndex(auth, s.cfg.CursorKey); entry != nil {
+		return entry
+	}
+	var apiKey, baseURL string
+	if auth.Attributes != nil {
+		apiKey = strings.TrimSpace(auth.Attributes["api_key"])
+		baseURL = strings.TrimSpace(auth.Attributes["base_url"])
+	}
+	for i := range s.cfg.CursorKey {
+		entry := &s.cfg.CursorKey[i]
+		if apiKey != "" && strings.EqualFold(strings.TrimSpace(entry.APIKey), apiKey) && strings.EqualFold(strings.TrimSpace(entry.BaseURL), baseURL) {
+			return entry
+		}
+	}
+	return nil
+}
+
 func (s *Service) resolveConfigCodexKey(auth *coreauth.Auth) *config.CodexKey {
 	if s == nil || s.cfg == nil {
 		return nil
@@ -816,6 +848,33 @@ func buildXAIConfigModels(entry *config.XAIKey) []*ModelInfo {
 		return nil
 	}
 	return buildConfigModels(entry.Models, "xai", "xai")
+}
+
+func (s *Service) fetchCursorModels(ctx context.Context, auth *coreauth.Auth) []*ModelInfo {
+	if s == nil || auth == nil {
+		return nil
+	}
+	discovered, errDiscover := executor.NewCursorExecutor(s.cfg).DiscoverModels(ctx, auth)
+	if errDiscover != nil {
+		return nil
+	}
+	models := make([]*ModelInfo, 0, len(discovered))
+	for _, model := range discovered {
+		if strings.TrimSpace(model.ID) == "" {
+			continue
+		}
+		models = append(models, &ModelInfo{
+			ID: model.ID, Object: "model", Created: time.Now().Unix(), OwnedBy: "cursor", Type: "cursor", DisplayName: model.DisplayName,
+		})
+	}
+	return models
+}
+
+func buildCursorConfigModels(entry *config.CursorKey) []*ModelInfo {
+	if entry == nil {
+		return nil
+	}
+	return buildConfigModels(entry.Models, "cursor", "cursor")
 }
 
 func buildCodexConfigModels(entry *config.CodexKey) []*ModelInfo {

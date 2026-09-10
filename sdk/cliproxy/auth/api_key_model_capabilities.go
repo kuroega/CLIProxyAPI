@@ -168,6 +168,10 @@ func compileAPIKeyModelCapabilitiesForAuth(cfg *internalconfig.Config, auth *Aut
 		if entry := resolveClaudeAPIKeyConfig(cfg, auth); entry != nil {
 			compileConfiguredModelCapabilities(out, entry.Models, "claude")
 		}
+	case "cursor":
+		if entry := resolveCursorAPIKeyConfig(cfg, auth); entry != nil {
+			compileConfiguredModelCapabilities(out, entry.Models, "cursor")
+		}
 	case "codex":
 		if entry := resolveCodexAPIKeyConfig(cfg, auth); entry != nil {
 			compileConfiguredModelCapabilities(out, entry.Models, "codex")

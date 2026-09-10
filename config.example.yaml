@@ -427,6 +427,45 @@ nonstream-keepalive-interval: 0
 #       - "*-mini"          # wildcard matching suffix (e.g. gpt-5-codex-mini)
 #       - "*codex*"         # wildcard matching substring (e.g. gpt-5-codex-low)
 
+# Cursor AgentService API keys
+# Cursor accepts a native access token (or use --cursor-login to create auths/cursor.json).
+# cursor-api-key:
+#   - api-key: "cursor-access-token"
+#     base-url: "https://api2.cursor.sh"
+#     weight: 5
+#     prefix: "cursor"
+#     proxy-url: "socks5://proxy.example.com:1080"
+#     headers:
+#       X-Cursor-Client-Version: "cli-2026.02.13-41ac335"
+#     models:
+#       - name: "claude-4.5-sonnet"
+#         alias: "cursor-sonnet"
+#         display-name: "Cursor Sonnet"
+#         max-context-length: 200000
+#         force-mapping: true
+#         thinking:
+#           levels: ["high", "medium", "low"]
+#     excluded-models:
+#       - "*-max"
+
+# Cursor local tools are denied by default. Each capability requires an explicit
+# opt-in and an existing absolute workspace. Shell and MCP execution are not
+# filesystem sandboxes; use OS/container isolation for untrusted workloads.
+# cursor-tools:
+#   workspace: "/absolute/path/to/isolated-workspace"
+#   files: false
+#   shell: false
+#   mcp: false
+# Optional trusted local stdio MCP servers (also requires cursor-tools.mcp: true):
+# cursor-mcp:
+#   servers:
+#     local-tools:
+#       enabled: false
+#       executable: "/absolute/path/to/mcp-server"
+#       args: []
+#       working-dir: "/absolute/path/to/isolated-workspace"
+#       env-allowlist: ["PATH"]
+
 # xAI API keys
 # Uses the native xAI executor, including its Responses namespace-tool handling.
 # xai-api-key:

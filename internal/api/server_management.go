@@ -132,6 +132,9 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/codex-api-key", s.mgmt.PutCodexKeys)
 		mgmt.PATCH("/codex-api-key", s.mgmt.PatchCodexKey)
 		mgmt.DELETE("/codex-api-key", s.mgmt.DeleteCodexKey)
+		mgmt.GET("/cursor-api-key", s.mgmt.GetCursorKeys)
+		mgmt.PUT("/cursor-api-key", s.mgmt.PutCursorKeys)
+		mgmt.DELETE("/cursor-api-key", s.mgmt.DeleteCursorKey)
 
 		mgmt.GET("/xai-api-key", s.mgmt.GetXAIKeys)
 		mgmt.PUT("/xai-api-key", s.mgmt.PutXAIKeys)
