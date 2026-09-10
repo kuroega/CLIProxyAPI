@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -38,8 +39,24 @@ func TestBuildCursorRunRequestUsesResponsesInput(t *testing.T) {
 	if err := proto.Unmarshal(wire, &decoded); err != nil {
 		t.Fatalf("unmarshal run request: %v", err)
 	}
-	if len(decoded.GetConversationState().GetRootPromptMessagesJson()) != 2 {
+	if len(decoded.GetConversationState().GetRootPromptMessagesJson()) != 1 {
 		t.Fatalf("root prompt messages = %d", len(decoded.GetConversationState().GetRootPromptMessagesJson()))
+	}
+}
+
+func TestStoreCursorRootPromptBlobsReplacesInlineData(t *testing.T) {
+	request := buildCursorRunRequest([]byte(`{"input":"hello"}`), "default", "conversation")
+	original := append([]byte(nil), request.GetConversationState().GetRootPromptMessagesJson()[0]...)
+	store := cursorconnect.NewBlobStorePool(1).ForSession("conversation")
+	if err := storeCursorRootPromptBlobs(request, store); err != nil {
+		t.Fatal(err)
+	}
+	id := request.GetConversationState().GetRootPromptMessagesJson()[0]
+	if len(id) != sha256.Size || bytes.Equal(id, original) {
+		t.Fatalf("root prompt blob id = %x", id)
+	}
+	if got := store.Get(id); !bytes.Equal(got, original) {
+		t.Fatalf("stored blob = %q, want %q", got, original)
 	}
 }
 

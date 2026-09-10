@@ -65,6 +65,13 @@ func TestCursorConnectFrameRejectsCompressedAndOversized(t *testing.T) {
 	}
 }
 
+func TestEndStreamErrorPreservesDiagnosticDetails(t *testing.T) {
+	err := EndStreamError([]byte(`{"error":{"code":"resource_exhausted","message":"Error","details":[{"type":"google.rpc.ErrorInfo","value":{"reason":"ERROR_RATE_LIMITED_CHANGEABLE","metadata":{"title":"Named models unavailable","detail":"Free plans can only use Auto."}}}]}}`))
+	if err == nil || !strings.Contains(err.Error(), "Named models unavailable") || !strings.Contains(err.Error(), "Free plans can only use Auto") {
+		t.Fatalf("EndStreamError() = %v", err)
+	}
+}
+
 func oversizedHeader() [5]byte {
 	var header [5]byte
 	binary.BigEndian.PutUint32(header[1:], MaxFrameSize+1)

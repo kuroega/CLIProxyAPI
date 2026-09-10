@@ -22,6 +22,7 @@ func TestCursorToolPolicy(t *testing.T) {
 	read := &cursorproto.ExecServerMessage{Id: 1, Message: &cursorproto.ExecServerMessage_ReadArgs{ReadArgs: &cursorproto.ReadArgs{Path: path}}}
 	shell := &cursorproto.ExecServerMessage{Id: 2, Message: &cursorproto.ExecServerMessage_ShellArgs{ShellArgs: &cursorproto.ShellArgs{Command: "echo allowed"}}}
 	mcp := &cursorproto.ExecServerMessage{Id: 3, Message: &cursorproto.ExecServerMessage_McpStateExecArgs{McpStateExecArgs: &cursorproto.McpStateExecArgs{}}}
+	requestContext := &cursorproto.ExecServerMessage{Id: 4, Message: &cursorproto.ExecServerMessage_RequestContextArgs{RequestContextArgs: &cursorproto.RequestContextArgs{}}}
 	for _, tc := range []struct {
 		name    string
 		tools   map[string]any
@@ -31,6 +32,7 @@ func TestCursorToolPolicy(t *testing.T) {
 		{"default denies files", nil, read, true},
 		{"default denies shell", nil, shell, true},
 		{"default denies MCP", nil, mcp, true},
+		{"request context is protocol metadata", nil, requestContext, false},
 		{"files need workspace", map[string]any{"files": true}, read, true},
 		{"workspace alone grants nothing", map[string]any{"workspace": workspace}, read, true},
 		{"relative workspace denied", map[string]any{"workspace": ".", "files": true}, read, true},

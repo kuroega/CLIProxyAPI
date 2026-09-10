@@ -4,6 +4,7 @@ package cursor
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -57,15 +58,27 @@ func writeFrame(w io.Writer, flags byte, payload []byte) error {
 func EndStreamError(payload []byte) error {
 	var terminal struct {
 		Error *struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code    string            `json:"code"`
+			Message string            `json:"message"`
+			Details []json.RawMessage `json:"details"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(payload, &terminal); err != nil {
 		return fmt.Errorf("cursor connect: decode end-stream metadata: %w", err)
 	}
 	if terminal.Error != nil {
-		return fmt.Errorf("cursor connect: %s: %s", terminal.Error.Code, terminal.Error.Message)
+		message := fmt.Sprintf("cursor connect: %s: %s", terminal.Error.Code, terminal.Error.Message)
+		if len(terminal.Error.Details) > 0 {
+			details, errMarshal := json.Marshal(terminal.Error.Details)
+			if errMarshal == nil {
+				const maxDetails = 400
+				if len(details) > maxDetails {
+					details = append(details[:maxDetails], '.', '.', '.')
+				}
+				message += " [details: " + string(details) + "]"
+			}
+		}
+		return errors.New(message)
 	}
 	return nil
 }

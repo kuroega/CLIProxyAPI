@@ -12,12 +12,6 @@ func ValidateTextRequest(payload []byte, format string) error {
 		return fmt.Errorf("request must be a JSON object")
 	}
 	root := gjson.ParseBytes(payload)
-	for _, name := range []string{"tools", "functions"} {
-		value := root.Get(name)
-		if value.Exists() && (!value.IsArray() || len(value.Array()) != 0) {
-			return fmt.Errorf("client-defined %s are unsupported; Cursor tools execute on the server", name)
-		}
-	}
 	for _, name := range []string{"previous_response_id", "conversation"} {
 		if value := root.Get(name); value.Exists() && value.Type != gjson.Null && value.String() != "" {
 			return fmt.Errorf("%s is unsupported; send the full text conversation", name)
@@ -61,7 +55,7 @@ func validateMessages(messages gjson.Result, gemini bool) error {
 	if !messages.IsArray() || len(messages.Array()) == 0 {
 		return fmt.Errorf("a non-empty text conversation is required")
 	}
-	lastRole := ""
+	hasUser := false
 	for _, message := range messages.Array() {
 		if !message.IsObject() {
 			return fmt.Errorf("conversation entries must be messages")
@@ -79,6 +73,9 @@ func validateMessages(messages gjson.Result, gemini bool) error {
 		default:
 			return fmt.Errorf("message role %q is unsupported", role)
 		}
+		if role == "user" {
+			hasUser = true
+		}
 		for _, name := range []string{"tool_calls", "function_call", "tool_call_id", "refusal", "reasoning_content"} {
 			value := message.Get(name)
 			if value.Exists() && value.Type != gjson.Null && !(value.IsArray() && len(value.Array()) == 0) {
@@ -94,10 +91,9 @@ func validateMessages(messages gjson.Result, gemini bool) error {
 		if err != nil {
 			return err
 		}
-		lastRole = role
 	}
-	if lastRole != "user" {
-		return fmt.Errorf("the conversation must end with a user message")
+	if !hasUser {
+		return fmt.Errorf("the conversation must contain a user message")
 	}
 	return nil
 }

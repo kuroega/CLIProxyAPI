@@ -15,7 +15,7 @@ import (
 
 const (
 	usableModelsPath     = "/agent.v1.AgentService/GetUsableModels"
-	DefaultClientVersion = "cli-2026.02.13-41ac335"
+	DefaultClientVersion = "cli-2026.07.23-e383d2b"
 )
 
 // Model describes an entitlement returned by Cursor's GetUsableModels RPC.

@@ -10,6 +10,13 @@ import (
 
 // WorkspaceRequestContext returns the non-sensitive local environment Cursor needs for workspace tools.
 func WorkspaceRequestContext(workspace string) *cursorproto.RequestContextResult {
+	if workspace == "" {
+		shell := "sh"
+		if runtime.GOOS == "windows" {
+			shell = "powershell.exe"
+		}
+		return &cursorproto.RequestContextResult{Result: &cursorproto.RequestContextResult_Success{Success: &cursorproto.RequestContextSuccess{RequestContext: &cursorproto.RequestContext{Env: &cursorproto.RequestContextEnv{OsVersion: runtime.GOOS, Shell: shell}}}}}
+	}
 	root, errRoot := filepath.Abs(workspace)
 	if errRoot != nil {
 		return &cursorproto.RequestContextResult{Result: &cursorproto.RequestContextResult_Error{Error: &cursorproto.RequestContextError{Error: fmt.Sprintf("resolve workspace: %v", errRoot)}}}

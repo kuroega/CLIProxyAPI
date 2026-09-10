@@ -19,13 +19,11 @@ func TestCursorRequestRejectsUnsupportedInput(t *testing.T) {
 		{"missing input", `{}`, sdktranslator.FormatOpenAIResponse},
 		{"object input", `{"input":{"role":"user","content":"hi"}}`, sdktranslator.FormatOpenAIResponse},
 		{"image", `{"input":[{"role":"user","content":[{"type":"input_image","image_url":"https://example.invalid/image"}]}]}`, sdktranslator.FormatOpenAIResponse},
-		{"tools", `{"input":"hi","tools":[{"type":"function","name":"read"}]}`, sdktranslator.FormatOpenAIResponse},
 		{"tool result", `{"input":[{"type":"function_call_output","call_id":"a","output":"text"}]}`, sdktranslator.FormatOpenAIResponse},
 		{"previous response", `{"input":"hi","previous_response_id":"resp_a"}`, sdktranslator.FormatOpenAIResponse},
 		{"assistant continuation", `{"input":[{"role":"assistant","content":"continue"}]}`, sdktranslator.FormatOpenAIResponse},
 		{"unknown role", `{"input":[{"role":"alien","content":"hi"}]}`, sdktranslator.FormatOpenAIResponse},
 		{"chat image before translation", `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.invalid/image"}}]}]}`, sdktranslator.FormatOpenAI},
-		{"chat functions", `{"messages":[{"role":"user","content":"hi"}],"functions":[{"name":"tool"}]}`, sdktranslator.FormatOpenAI},
 		{"chat tool history", `{"messages":[{"role":"assistant","tool_calls":[{"id":"a","type":"function","function":{"name":"tool","arguments":"{}"}}]},{"role":"user","content":"hi"}]}`, sdktranslator.FormatOpenAI},
 		{"claude image", `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"abc"}}]}]}`, sdktranslator.FormatClaude},
 		{"gemini inline data", `{"contents":[{"role":"user","parts":[{"inlineData":{"mimeType":"image/png","data":"abc"}}]}]}`, sdktranslator.FormatGemini},
@@ -60,20 +58,33 @@ func TestCursorRequestPreservesTextConversation(t *testing.T) {
 			}
 			run := buildCursorRunRequest(payload, "cursor-model", "session")
 			root := run.GetConversationState().GetRootPromptMessagesJson()
-			if len(root) != 4 {
+			if len(root) != 3 {
 				t.Fatalf("root message count = %d; canonical=%s", len(root), payload)
 			}
-			for i, role := range []string{"system", "user", "assistant", "user"} {
-				if i == 0 && tc.format != sdktranslator.FormatOpenAIResponse {
-					role = "developer"
-				}
+			for i, role := range []string{"system", "user", "assistant"} {
 				if !json.Valid(root[i]) || gjson.GetBytes(root[i], "role").String() != role {
 					t.Fatalf("message %d = %s, expected role %s", i, root[i], role)
 				}
+			}
+			if got := gjson.GetBytes(root[2], "content.0.type").String(); got != "text" {
+				t.Fatalf("assistant history content type = %q", got)
 			}
 			if got := run.GetAction().GetUserMessageAction().GetUserMessage().GetText(); got != "last" {
 				t.Fatalf("action = %q", got)
 			}
 		})
+	}
+}
+
+func TestCursorRequestIgnoresClaudeClientTools(t *testing.T) {
+	payload, err := cursorCanonicalRequest(cliproxyexecutor.Request{
+		Model:   "cursor-model",
+		Payload: []byte(`{"system":[{"type":"text","text":"system instruction"}],"tools":[{"name":"Read","description":"read a file","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"text","text":"last"}]},{"role":"system","content":[{"type":"text","text":"trailing metadata"}]}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := buildCursorRunRequest(payload, "cursor-model", "session").GetAction().GetUserMessageAction().GetUserMessage().GetText(); got != "last" {
+		t.Fatalf("action = %q", got)
 	}
 }

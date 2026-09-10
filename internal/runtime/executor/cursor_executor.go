@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	cursorauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/cursor"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	cursoragent "github.com/router-for-me/CLIProxyAPI/v7/internal/cursor"
@@ -303,7 +304,11 @@ func (e *CursorExecutor) execute(ctx context.Context, auth *cliproxyauth.Auth, r
 			finish()
 		}
 	}()
+	blobs := e.blobStores.ForSession(owner)
 	runRequest := buildCursorRunRequest(payload, baseModel, cursorConversationID(req, opts))
+	if errBlobs := storeCursorRootPromptBlobs(runRequest, blobs); errBlobs != nil {
+		return nil, errBlobs
+	}
 	bodyReader, bodyWriter := io.Pipe()
 	duplex := &cursorDuplexWriter{writer: bodyWriter}
 	url := strings.TrimRight(baseURL, "/") + cursorRunPath
@@ -321,6 +326,7 @@ func (e *CursorExecutor) execute(ctx context.Context, auth *cliproxyauth.Auth, r
 	httpReq.Header.Set("X-Ghost-Mode", "true")
 	httpReq.Header.Set("X-Cursor-Client-Type", "cli")
 	httpReq.Header.Set("X-Cursor-Client-Version", cursoragent.DefaultClientVersion)
+	httpReq.Header.Set("X-Request-ID", uuid.NewString())
 	for key, value := range cursorHeaders(auth) {
 		if httpReq.Header.Get(key) == "" {
 			httpReq.Header.Set(key, value)
@@ -358,7 +364,6 @@ func (e *CursorExecutor) execute(ctx context.Context, auth *cliproxyauth.Auth, r
 			return nil, newCursorStatusErr(httpResp.StatusCode, data)
 		}
 		out := make(chan cursorEvent)
-		blobs := e.blobStores.ForSession(owner)
 		handedOff = true
 		go e.consumeCursorStream(ctx, httpResp, duplex, blobs, owner, opts.ExecutionLifecycle, out, func() {
 			e.closeCursorOwner(owner)
@@ -511,6 +516,10 @@ func (e *CursorExecutor) consumeCursorStream(ctx context.Context, response *http
 }
 
 func (e *CursorExecutor) handleCursorExec(ctx context.Context, duplex *cursorDuplexWriter, request *cursorproto.ExecServerMessage, shellOwner string, binder cursorconnect.ShellResourceBinder) error {
+	if request.GetRequestContextArgs() != nil {
+		result := cursorconnect.WorkspaceRequestContext(e.tools.Workspace)
+		return cursorSendExecResult(duplex, &cursorproto.ExecClientMessage{Id: request.GetId(), ExecId: request.GetExecId(), Message: &cursorproto.ExecClientMessage_RequestContextResult{RequestContextResult: result}})
+	}
 	workspace, errWorkspace := cursorconnect.ToolWorkspace(e.tools, request)
 	if errWorkspace != nil {
 		return cursorRejectExec(duplex, request.GetId(), errWorkspace.Error())
@@ -557,9 +566,6 @@ func (e *CursorExecutor) handleCursorExec(ctx context.Context, duplex *cursorDup
 	case request.GetReadMcpResourceExecArgs() != nil:
 		result := e.cursorMCPExecutor(shellOwner).handleCursorMCPResourceRead(ctx, workspace, request.GetReadMcpResourceExecArgs())
 		return cursorSendExecResult(duplex, &cursorproto.ExecClientMessage{Id: request.GetId(), ExecId: request.GetExecId(), Message: &cursorproto.ExecClientMessage_ReadMcpResourceExecResult{ReadMcpResourceExecResult: result}})
-	case request.GetRequestContextArgs() != nil:
-		result := cursorconnect.WorkspaceRequestContext(workspace)
-		return cursorSendExecResult(duplex, &cursorproto.ExecClientMessage{Id: request.GetId(), ExecId: request.GetExecId(), Message: &cursorproto.ExecClientMessage_RequestContextResult{RequestContextResult: result}})
 	case request.GetShellStreamArgs() != nil:
 		foreground, errStart := e.shells.StartForeground(ctx, workspace, shellOwner, request.GetId(), request.GetExecId(), request.GetShellStreamArgs())
 		if errStart != nil {
@@ -1053,23 +1059,67 @@ func buildCursorRunRequest(payload []byte, model, conversationID string) *cursor
 	}
 }
 
-// cursorRootPromptMessages preserves the Responses input transcript instead of flattening it.
+func storeCursorRootPromptBlobs(request *cursorproto.AgentRunRequest, blobs *cursorconnect.BlobStore) error {
+	state := request.GetConversationState()
+	if state == nil {
+		return fmt.Errorf("cursor executor: conversation state is missing")
+	}
+	for index, data := range state.RootPromptMessagesJson {
+		id := sha256.Sum256(data)
+		if errSet := blobs.Set(id[:], data); errSet != nil {
+			return fmt.Errorf("cursor executor: store root prompt blob: %w", errSet)
+		}
+		state.RootPromptMessagesJson[index] = append([]byte(nil), id[:]...)
+	}
+	return nil
+}
+
+// cursorRootPromptMessages builds Cursor's Vercel-AI-shaped history. The active
+// user message is excluded because it is sent separately in the action.
 func cursorRootPromptMessages(payload []byte, instruction string) [][]byte {
-	root := make([][]byte, 0, 1)
+	input := gjson.GetBytes(payload, "input")
+	items := input.Array()
+	root := make([][]byte, 0, len(items)+1)
 	if instruction != "" {
 		root = append(root, []byte(`{"role":"system","content":`+mustJSON(instruction)+`}`))
+	} else if len(items) == 0 || items[0].Get("role").String() != "developer" {
+		root = append(root, []byte(`{"role":"system","content":"You are a helpful assistant."}`))
 	}
-	input := gjson.GetBytes(payload, "input")
 	if input.Type == gjson.String {
-		root = append(root, []byte(`{"role":"user","content":`+mustJSON(input.String())+`}`))
 		return root
 	}
-	input.ForEach(func(_, item gjson.Result) bool {
-		if item.Type == gjson.JSON {
-			root = append(root, []byte(item.Raw))
+	activeUser := cursorActiveUserIndex(items)
+	historyEnd := len(items)
+	if activeUser >= 0 {
+		historyEnd = activeUser
+	}
+	for _, item := range items[:historyEnd] {
+		if item.Type != gjson.JSON {
+			continue
 		}
-		return true
-	})
+		var message map[string]any
+		if errDecode := json.Unmarshal([]byte(item.Raw), &message); errDecode != nil {
+			continue
+		}
+		if message["role"] == "developer" {
+			message["role"] = "system"
+		}
+		if content, ok := message["content"].([]any); ok {
+			for _, rawPart := range content {
+				part, okPart := rawPart.(map[string]any)
+				if !okPart {
+					continue
+				}
+				if part["type"] == "input_text" || part["type"] == "output_text" {
+					part["type"] = "text"
+				}
+			}
+		}
+		encoded, errEncode := json.Marshal(message)
+		if errEncode == nil {
+			root = append(root, encoded)
+		}
+	}
 	return root
 }
 
@@ -1078,32 +1128,44 @@ func cursorPromptText(payload []byte) string {
 	if input.Type == gjson.String {
 		return input.String()
 	}
-	latest := ""
-	input.ForEach(func(_, item gjson.Result) bool {
-		if item.Get("role").String() != "user" {
-			return true
+	items := input.Array()
+	activeUser := cursorActiveUserIndex(items)
+	if activeUser < 0 {
+		return ""
+	}
+	return cursorMessageText(items[activeUser])
+}
+
+func cursorActiveUserIndex(items []gjson.Result) int {
+	for index := len(items) - 1; index >= 0; index-- {
+		if items[index].Get("role").String() != "user" {
+			continue
 		}
-		var parts []string
-		content := item.Get("content")
-		if content.Type == gjson.String {
-			parts = append(parts, content.String())
-		} else {
-			content.ForEach(func(_, part gjson.Result) bool {
-				typ := part.Get("type").String()
-				if typ == "input_text" || typ == "text" || typ == "output_text" {
-					if text := part.Get("text").String(); text != "" {
-						parts = append(parts, text)
-					}
-				}
-				return true
-			})
+		text := strings.TrimSpace(cursorMessageText(items[index]))
+		if strings.HasPrefix(text, "<system-reminder>") && strings.HasSuffix(text, "</system-reminder>") {
+			continue
 		}
-		if len(parts) > 0 {
-			latest = strings.Join(parts, "\n")
+		return index
+	}
+	return -1
+}
+
+func cursorMessageText(item gjson.Result) string {
+	content := item.Get("content")
+	if content.Type == gjson.String {
+		return content.String()
+	}
+	var parts []string
+	content.ForEach(func(_, part gjson.Result) bool {
+		typ := part.Get("type").String()
+		if typ == "input_text" || typ == "text" || typ == "output_text" {
+			if text := part.Get("text").String(); text != "" {
+				parts = append(parts, text)
+			}
 		}
 		return true
 	})
-	return latest
+	return strings.Join(parts, "\n")
 }
 
 func cursorConversationID(req cliproxyexecutor.Request, opts cliproxyexecutor.Options) string {

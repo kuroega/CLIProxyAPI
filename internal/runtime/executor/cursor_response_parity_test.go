@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	cursorproto "github.com/router-for-me/CLIProxyAPI/v7/internal/cursor/proto"
 	cursorconnect "github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps/cursor"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -18,6 +19,12 @@ import (
 
 func TestCursorResponseFormatParity(t *testing.T) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Cursor-Client-Version") != "cli-2026.07.23-e383d2b" {
+			t.Errorf("client version = %q", r.Header.Get("X-Cursor-Client-Version"))
+		}
+		if _, err := uuid.Parse(r.Header.Get("X-Request-ID")); err != nil {
+			t.Errorf("request id = %q: %v", r.Header.Get("X-Request-ID"), err)
+		}
 		if _, err := cursorconnect.ReadFrame(r.Body); err != nil {
 			return
 		}
