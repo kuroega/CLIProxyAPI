@@ -22,6 +22,9 @@ import (
 const provider = "workbuddy"
 
 type callback func(string, any, any) error
+
+// Credential JSON contains live bearer and rotating refresh tokens. It belongs
+// in the host's auth store only; never print it or include it in an example.
 type credential struct {
 	Provider     string `json:"provider"`
 	UID          string `json:"uid"`
@@ -37,6 +40,9 @@ type loginState struct {
 	created  time.Time
 }
 
+// Login state lives in memory for the short browser authorization flow. The
+// poll metadata also carries the upstream state so polling survives a reload;
+// expired sessions must be started again rather than reused.
 var logins = struct {
 	sync.Mutex
 	states map[string]loginState
@@ -49,6 +55,8 @@ type upstreamError struct {
 
 func (e *upstreamError) Error() string { return e.message }
 
+// Authentication/chat and billing do not all use the same CN origin. Keep
+// portal selection here, but use the billing-specific URL in quota.go.
 func realmURL(realm string) string {
 	if realm == "cn" {
 		return "https://copilot.tencent.com"
@@ -80,6 +88,9 @@ func commonHeaders(realm string) http.Header {
 	}
 	return h
 }
+
+// upstreamJSON uses the host callback for non-streaming control-plane calls.
+// Avoid echoing response bodies in errors: they can contain credentials.
 func upstreamJSON(call callback, method, endpoint string, headers http.Header, body []byte) (map[string]any, error) {
 	var resp pluginapi.HTTPResponse
 	err := call(pluginabi.MethodHostHTTPDo, hostRequest{HTTPRequest: pluginapi.HTTPRequest{Method: method, URL: endpoint, Headers: headers, Body: body}}, &resp)
@@ -125,6 +136,10 @@ func tokenUID(token string) string {
 	}
 	return field(claims, "sub")
 }
+
+// authData gives each realm/user pair a stable hashed file ID (not encryption).
+// On refresh, return the entire replacement StorageJSON so rotating refresh
+// tokens are persisted, and schedule refresh before the bearer JWT expires.
 func authData(c credential, name string) (pluginapi.AuthData, error) {
 	if c.UID == "" || c.AccessToken == "" || !validRealm(c.Realm) {
 		return pluginapi.AuthData{}, errors.New("credential needs UID, access token and realm")
@@ -199,6 +214,10 @@ func parseAuth(raw []byte) ([]byte, error) {
 	}
 	return success(pluginapi.AuthParseResponse{Handled: true, Auth: data})
 }
+
+// startLogin requests the WorkBuddy browser URL and returns an independent
+// local state to the management OAuth flow. Choose realm=cn explicitly for a
+// CN account; omitting it uses the international portal.
 func startLogin(raw []byte, call callback) ([]byte, error) {
 	var req pluginapi.AuthLoginStartRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -271,6 +290,9 @@ func pollLogin(raw []byte, call callback) ([]byte, error) {
 	logins.Unlock()
 	return success(pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusSuccess, Auth: auth})
 }
+
+// refreshAuth sends the provider-specific headers and replaces both tokens
+// when WorkBuddy rotates them. Re-authenticate if the refresh token is gone.
 func refreshAuth(raw []byte, call callback) ([]byte, error) {
 	var req pluginapi.AuthRefreshRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -318,6 +340,9 @@ func refreshAuth(raw []byte, call callback) ([]byte, error) {
 	return success(pluginapi.AuthRefreshResponse{Auth: auth, NextRefreshAfter: auth.NextRefreshAfter})
 }
 
+// Static catalogs let the host register routes before an account is loaded.
+// For an authenticated account, /v3/config provides the preferred live list;
+// these snapshots are only a fallback, not a promise of current availability.
 var intlModels = []string{"hy4-preview-f", "hy3", "deepseek-v4.1-flash", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "grok-4.7", "gemini-3.5-flash", "glm-5.3-flash", "glm-5.3", "glm-5.2", "kimi-k3", "kimi-k2.6", "kimi-k2.8-preview"}
 var cnModels = []string{"hy4-preview-f", "hy3", "deepseek-v4.1-flash", "deepseek-v4-pro", "glm-5.3", "glm-5.3-flash", "glm-5.2", "glm-5.1", "glm-5v-turbo", "minimax-m3", "kimi-k3-1", "kimi-k2.8-preview", "kimi-k2.7", "kimi-k2.6"}
 
@@ -339,6 +364,10 @@ func catalog(realm string) []pluginapi.ModelInfo {
 	}
 	return out
 }
+
+// A failed catalog request falls back to the realm snapshot so a transient
+// config outage does not erase existing routes. Execution can still fail if
+// WorkBuddy no longer offers a model; restart after upstream model changes.
 func modelsForAuth(raw []byte, call callback) ([]byte, error) {
 	var req pluginapi.AuthModelRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -369,6 +398,8 @@ func modelsForAuth(raw []byte, call callback) ([]byte, error) {
 	return success(pluginapi.ModelResponse{Provider: provider, Models: models})
 }
 
+// WorkBuddy's configuration also contains aliases and region-suffixed
+// variants. Only advertise concrete CLI model IDs to downstream clients.
 func remoteModelIDs(obj map[string]any) []string {
 	root := obj
 	if data, ok := obj["data"].(map[string]any); ok {
@@ -402,6 +433,11 @@ func remoteModelIDs(obj map[string]any) []string {
 	}
 	return out
 }
+
+// upstreamBody adapts a small subset of OpenAI Chat Completions to WorkBuddy.
+// The upstream always streams, even when the downstream caller asked for a
+// single JSON response (execution.go assembles that response). UseNumber
+// preserves numeric request fields rather than converting them to float64.
 func upstreamBody(req []byte, model string) ([]byte, error) {
 	dec := json.NewDecoder(bytes.NewReader(req))
 	dec.UseNumber()
@@ -445,6 +481,8 @@ func upstreamBody(req []byte, model string) ([]byte, error) {
 			delete(body, "tool_choice")
 		}
 	}
+	// DeepSeek expects an explicit reasoning mode and assistant reasoning
+	// history; omit these compatibility hints when the caller disables it.
 	if strings.HasPrefix(strings.ToLower(model), "deepseek") {
 		thinking, _ := body["thinking"].(map[string]any)
 		effort, _ := body["reasoning_effort"].(string)
@@ -475,6 +513,7 @@ func upstreamBody(req []byte, model string) ([]byte, error) {
 			}
 		}
 	}
+	// Host-private metadata is not part of WorkBuddy's request schema.
 	for key := range body {
 		if strings.HasPrefix(key, "_") {
 			delete(body, key)

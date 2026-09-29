@@ -14,6 +14,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
+// The quota callback can use the host's HTTP bridge for the selected auth;
+// never reuse an arbitrary account's bearer token to check another account.
 type quotaRequest struct {
 	pluginapi.QuotaFetchRequest
 	HostCallbackID string `json:"host_callback_id,omitempty"`
@@ -26,6 +28,9 @@ type creditPackage struct {
 	Total     float64
 }
 
+// fetchQuota queries the billing meter only when requested. It makes no
+// persistent cache: remaining credits can change between refreshes, and a
+// failed fetch must not silently be represented as zero balance.
 func fetchQuota(raw []byte, call callback) ([]byte, error) {
 	var req quotaRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -38,6 +43,8 @@ func fetchQuota(raw []byte, call callback) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode WorkBuddy quota credential: %w", err)
 	}
+	// The meter uses local-time date strings and pagination. Request up to
+	// 100 active packages; this example does not traverse later pages.
 	now := time.Now().Local().Format("2006-01-02 15:04:05")
 	body, err := json.Marshal(map[string]any{
 		"PageNumber": 1, "PageSize": 100, "ProductCode": "p_tcaca",
@@ -56,6 +63,9 @@ func fetchQuota(raw []byte, call callback) ([]byte, error) {
 	session := md5.Sum([]byte("session:" + c.UID))
 	headers.Set("X-Machine-ID", hex.EncodeToString(machine[:]))
 	headers.Set("X-Session-ID", hex.EncodeToString(session[:]))
+	// The CN billing host differs from the CN login/chat portal. Keep the
+	// request bound to the credential's realm to avoid sending a token to
+	// the other region's billing service.
 	billingURL := "https://www.workbuddy.ai/v2/billing/meter/get-user-resource"
 	if c.Realm == "cn" {
 		billingURL = "https://www.codebuddy.cn/v2/billing/meter/get-user-resource"
@@ -79,6 +89,8 @@ func fetchQuota(raw []byte, call callback) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A summary is convenient for small clients (including CC Switch); the
+	// groups retain per-package information for management UI consumers.
 	resp := pluginapi.QuotaFetchResponse{}
 	var total, used, remaining float64
 	for _, pkg := range packages {
@@ -105,8 +117,11 @@ func fetchQuota(raw []byte, call callback) ([]byte, error) {
 	return success(resp)
 }
 
-// parseCredits follows the billing meter's cycle counters when available.
-// Never treat an invalid or unexpected response as a zero balance.
+// parseCredits follows the billing meter's current-cycle counters when they
+// exist and falls back to lifetime package counters otherwise. CycleUsed can
+// exceed a naive Total-Remaining calculation; trust the larger used counter
+// and clamp remaining to zero. Never treat a rejected or unexpected response
+// as a valid zero-credit balance.
 func parseCredits(raw []byte) ([]creditPackage, error) {
 	var envelope struct {
 		Code *int `json:"code"`
@@ -132,6 +147,8 @@ func parseCredits(raw []byte) ([]creditPackage, error) {
 	if envelope.Code == nil || *envelope.Code != 0 {
 		return nil, errors.New("WorkBuddy billing rejected the credits request")
 	}
+	// An explicit empty Accounts array is a valid zero-package balance; a
+	// missing Accounts field usually means the response schema changed.
 	if envelope.Data.Response.Data.Accounts == nil {
 		return nil, errors.New("WorkBuddy billing response has no accounts field")
 	}

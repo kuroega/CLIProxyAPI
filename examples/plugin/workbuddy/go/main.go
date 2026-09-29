@@ -1,3 +1,6 @@
+// WorkBuddy is a standalone c-shared plugin: build this package with
+// go build -buildmode=c-shared, not as a CLIProxyAPI server executable.
+// Keep the ABI declarations in sync with sdk/pluginabi when upgrading the host.
 package main
 
 /*
@@ -38,6 +41,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
+// Plugin and host callbacks exchange JSON envelopes across the C ABI. A
+// callback's C return code and its JSON "ok" flag must both indicate success.
 type envelope struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
@@ -83,6 +88,10 @@ type hostChunk struct {
 
 func main() {}
 
+// cliproxy_plugin_init installs host callbacks and hands the host our exported
+// call/free/shutdown functions. All memory returned in response must be freed
+// with workbuddyFree, not with the host's free function.
+//
 //export cliproxy_plugin_init
 func cliproxy_plugin_init(host *C.cliproxy_host_api, plugin *C.cliproxy_plugin_api) C.int {
 	if host == nil || plugin == nil {
@@ -151,6 +160,10 @@ func fail(err error) []byte {
 	data, _ := json.Marshal(envelope{Error: &envelopeError{Code: "workbuddy_error", Message: err.Error(), HTTPStatus: status}})
 	return data
 }
+
+// hostCall marshals an SDK operation through the host. In particular, network
+// requests must go through host.http callbacks rather than a plugin-owned HTTP
+// client, so the server's transport, proxy and request policies still apply.
 func hostCall(method string, request any, result any) error {
 	data, err := json.Marshal(request)
 	if err != nil {
@@ -190,6 +203,10 @@ func hostCall(method string, request any, result any) error {
 	}
 	return nil
 }
+
+// dispatch advertises and handles the plugin's separate auth, model, executor
+// and quota capabilities. "both" model scope lets the host route static model
+// IDs as well as models discovered for an individual credential.
 func dispatch(method string, raw []byte, call callback) ([]byte, error) {
 	switch method {
 	case pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure:
@@ -225,6 +242,8 @@ func dispatch(method string, raw []byte, call callback) ([]byte, error) {
 	case pluginabi.MethodQuotaReset:
 		return nil, errors.New("WorkBuddy credits cannot be reset")
 	case pluginabi.MethodExecutorCountTokens:
+		// This placeholder is not a real tokenizer; do not use its output for
+		// billing or exact context-window admission decisions.
 		return success(pluginapi.ExecutorResponse{Payload: []byte(`{"total_tokens":0}`)})
 	case pluginabi.MethodExecutorHTTPRequest:
 		return nil, errors.New("arbitrary HTTP forwarding is not supported")

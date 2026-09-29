@@ -16,6 +16,10 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
+// identityHeaders mimics the selected WorkBuddy product's request identity.
+// These headers are upstream protocol requirements, not user-configurable
+// profile names. The machine/session hashes are deterministic per account;
+// never log these headers because they also contain the bearer token.
 func identityHeaders(c credential) http.Header {
 	h := commonHeaders(c.Realm)
 	h.Set("Authorization", "Bearer "+c.AccessToken)
@@ -83,6 +87,10 @@ func chatEndpoint(c credential) string {
 	}
 	return realmURL(c.Realm) + "/v2/chat/completions"
 }
+
+// execute opens one upstream SSE stream for both downstream modes. Streaming
+// emits raw JSON chat chunks to the host stream API; non-streaming accumulates
+// the same chunks into one OpenAI-compatible chat completion.
 func execute(raw []byte, call callback, streaming bool) ([]byte, error) {
 	var req rpcRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -113,10 +121,13 @@ func execute(raw []byte, call callback, streaming bool) ([]byte, error) {
 			closeUpstream(call, resp.StreamID)
 			return nil, errors.New("executor stream ID is required")
 		}
+		// Return the stream response immediately; the goroutine owns reading
+		// and closing the upstream and downstream streams from this point on.
 		go func() {
 			errRun := readEvents(call, resp.StreamID, func(event []byte) error {
 				payload := bytes.TrimSpace(bytes.TrimPrefix(event, []byte("data:")))
-				// The host wraps OpenAI chat chunks in SSE and writes [DONE].
+				// Emit only the JSON payload: the host adds "data:" framing and
+				// [DONE]. Sending our own SSE frame here would double-frame it.
 				if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
 					return nil
 				}
@@ -145,7 +156,10 @@ func closeUpstream(call callback, id string) {
 	_ = call(pluginabi.MethodHostHTTPStreamClose, map[string]string{"stream_id": id}, nil)
 }
 
-// readEvents assembles complete SSE events even when a host transport chunk splits a line.
+// readEvents assembles complete SSE events even when a host transport chunk
+// splits a line or multiple frames arrive together. It closes the upstream
+// stream on every exit path. Keep the pending frame bound to avoid unbounded
+// memory use on a malformed or malicious stream.
 func readEvents(call callback, id string, consume func([]byte) error) error {
 	defer closeUpstream(call, id)
 	var pending []byte
@@ -193,6 +207,8 @@ func readEvents(call callback, id string, consume func([]byte) error) error {
 			if json.Unmarshal([]byte(data), &obj) != nil {
 				continue
 			}
+			// WorkBuddy can signal quota/rate/auth errors inside an HTTP 200 SSE
+			// response; propagate them instead of returning a partial answer.
 			if code, ok := obj["code"].(float64); ok && code != 0 {
 				status := http.StatusBadGateway
 				if code == 6004 {
@@ -242,6 +258,9 @@ type aggregatedTool struct {
 		Arguments string `json:"arguments"`
 	} `json:"function"`
 }
+
+// Tool calls arrive in partial deltas keyed by index, not as complete JSON
+// tools; collect fragments by index and concatenate names/arguments.
 type aggregator struct {
 	model     string
 	id        string
@@ -317,6 +336,8 @@ func (a *aggregator) accept(frame []byte) error {
 	}
 	return nil
 }
+
+// A stream with only usage metadata or [DONE] is not a successful completion.
 func (a *aggregator) result() ([]byte, error) {
 	if !a.seen {
 		return nil, errors.New("WorkBuddy returned no completion")
