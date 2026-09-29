@@ -56,6 +56,7 @@ type registration struct {
 		ModelProvider         bool     `json:"model_provider"`
 		AuthProvider          bool     `json:"auth_provider"`
 		Executor              bool     `json:"executor"`
+		QuotaProvider         bool     `json:"quota_provider"`
 		ExecutorModelScope    string   `json:"executor_model_scope"`
 		ExecutorInputFormats  []string `json:"executor_input_formats"`
 		ExecutorOutputFormats []string `json:"executor_output_formats"`
@@ -194,11 +195,12 @@ func dispatch(method string, raw []byte, call callback) ([]byte, error) {
 	case pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure:
 		reg := registration{SchemaVersion: pluginabi.SchemaVersion, Metadata: pluginapi.Metadata{Name: "WorkBuddy", Version: "0.1.0", Author: "CLIProxyAPI", GitHubRepository: "https://github.com/router-for-me/CLIProxyAPI", ConfigFields: []pluginapi.ConfigField{}}}
 		reg.Capabilities.ModelRegistrar, reg.Capabilities.ModelProvider, reg.Capabilities.AuthProvider, reg.Capabilities.Executor = true, true, true, true
+		reg.Capabilities.QuotaProvider = true
 		reg.Capabilities.ExecutorModelScope = "both"
 		reg.Capabilities.ExecutorInputFormats = []string{"chat-completions"}
 		reg.Capabilities.ExecutorOutputFormats = []string{"chat-completions"}
 		return success(reg)
-	case pluginabi.MethodAuthIdentifier, pluginabi.MethodExecutorIdentifier:
+	case pluginabi.MethodAuthIdentifier, pluginabi.MethodExecutorIdentifier, pluginabi.MethodQuotaIdentifier:
 		return success(map[string]string{"identifier": provider})
 	case pluginabi.MethodModelRegister, pluginabi.MethodModelStatic:
 		return success(pluginapi.ModelRegistrationResponse{Provider: provider, Models: catalog("all")})
@@ -216,6 +218,12 @@ func dispatch(method string, raw []byte, call callback) ([]byte, error) {
 		return execute(raw, call, false)
 	case pluginabi.MethodExecutorExecuteStream:
 		return execute(raw, call, true)
+	case pluginabi.MethodQuotaDescribe:
+		return success(pluginapi.QuotaDescribeResponse{SupportedProviders: []string{provider}, DisplayName: "WorkBuddy credits"})
+	case pluginabi.MethodQuotaFetch:
+		return fetchQuota(raw, call)
+	case pluginabi.MethodQuotaReset:
+		return nil, errors.New("WorkBuddy credits cannot be reset")
 	case pluginabi.MethodExecutorCountTokens:
 		return success(pluginapi.ExecutorResponse{Payload: []byte(`{"total_tokens":0}`)})
 	case pluginabi.MethodExecutorHTTPRequest:

@@ -1,6 +1,6 @@
 # WorkBuddy provider plugin (experimental)
 
-This standalone shared-library plugin adds a `workbuddy` provider without changes to the CLIProxyAPI server. It implements international (`intl`) and China (`cn`) browser login, polling, rotating-token refresh, per-account model lists, and OpenAI Chat Completions execution (streaming and non-streaming). CLIProxyAPI's existing translators can serve other downstream protocols from this format where supported.
+This standalone shared-library plugin adds a `workbuddy` provider without changes to the CLIProxyAPI server. It implements international (`intl`) and China (`cn`) browser login, polling, rotating-token refresh, per-account model lists, credit balance queries, and OpenAI Chat Completions execution (streaming and non-streaming). CLIProxyAPI's existing translators can serve other downstream protocols from this format where supported.
 
 ## Build and install
 
@@ -25,6 +25,12 @@ plugins:
 ```
 
 Use the management OAuth flow: `GET /v0/management/oauth/auth-url?provider=workbuddy&realm=intl` or `realm=cn`. Open the returned `url`, then poll the management auth-status endpoint with the returned `state` (normally handled by the management UI). The plugin stores a separate credential for each account and realm. Desktop credential import is **not** supported: recent desktop builds encrypt their tokens. Existing unencrypted credential files may be placed in `auths/` with `provider`, `uid`, `realm`, `accessToken`, `refreshToken` and optional `product` (`workbuddy`, `cli`, or `vscode`). Protect that directory: it contains secrets.
+
+## Checking remaining credits
+
+The plugin's quota provider queries the WorkBuddy billing meter for the selected credential. It reports remaining, used, and total **credits** (not currency or token counts) and each package's remaining fraction. Use the authenticated Management API `POST /v8/management/credentials/quota/fetch` with `{"auth_index":"<index>"}`; the index is available from `GET /v0/management/auth-files`. This endpoint requires the **management key**, not the proxy's client API key. The plugin does not cache or persist billing results.
+
+CC Switch can display this through a **Custom** Usage Query script on the WorkBuddy provider card. Configure the script to POST to the local Management API quota endpoint and extract the `summary` metrics. Use the management key only on a trusted local cc-switch installation, keep management bound to localhost, and never paste this key into shared configuration or screenshots. Automatic refresh only runs for the active CC Switch provider; inactive profiles can be queried manually.
 
 ## Scope and limitations
 
